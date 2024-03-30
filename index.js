@@ -8,7 +8,7 @@ let ready = {
   discord: false,
   telegram: false,
 };
-let channel;
+let channel, webhook;
 
 // Change this for yourself
 
@@ -25,6 +25,8 @@ async function initializeTelegramBot() {
   bot = new TelegramBot(process.env.tg_token, { polling: true });
   ready.telegram = true;
   console.log(`Telegram Bot: Ready! Logged in!`);
+  // console.log(bot.logOut());
+  // console.log(bot.close());
 }
 initializeTelegramBot();
 
@@ -48,18 +50,34 @@ client.once(Events.ClientReady, async (readyClient) => {
   channel = await client.guilds.cache
     .get(guildId)
     .channels.fetch(discordChannelID);
+  const webhooks = await channel.fetchWebhooks();
+  let found = false;
+  webhooks.each((webhook) => {
+    if (webhook.name === "BridgeBotWebhook") found = true;
+  });
+  if (!found) {
+    webhook = await channel.createWebhook({
+      name: "BridgeBotWebhook",
+      reason: "This webhook is used to bridge telegram messages to discord.",
+    });
+  } else {
+    webhook = webhooks.find((webhook) => webhook.name === "BridgeBotWebhook");
+  }
+
   ready.discord = true;
 });
 
 // LOGIC
 
 bot.on("polling_error", (err) => {
+  ready.telegram = false;
   console.log("Error on line 57:");
   console.log(err);
   initializeTelegramBot();
 });
 
 bot.on("message", async (msg) => {
+  ready.telegram = true;
   if (!ready.discord) return;
   if (msg.from.is_bot) return;
   if (msg.chat.type === "private" && msg.text === "/start") {
@@ -71,6 +89,7 @@ bot.on("message", async (msg) => {
     return;
   }
   let attachment = null;
+  let pfp;
   if (msg.photo || msg.video || msg.animation) {
     let userAttachment = msg.photo || msg.video || msg.animation;
     const fileId = msg.photo
@@ -82,6 +101,13 @@ bot.on("message", async (msg) => {
     const response = await fetch(url);
     attachment = await response.buffer();
   }
+  const userProfilePhotos = await bot.getUserProfilePhotos(msg.from.id);
+  const profilePhoto = userProfilePhotos.photos[0];
+  const requiredResolution = profilePhoto[0];
+  const pfpFileId = requiredResolution.file_id;
+  const pfpFile = await bot.getFile(pfpFileId);
+  const pfpPath = pfpFile.file_path;
+  const pfpUrl = `https://api.telegram.org/file/bot${process.env.tg_token}/${pfpPath}`;
   if (msg.chat.id != telegramChannelId) return;
   const tgMsgId = msg.message_id;
   let dcMsgId;
@@ -92,7 +118,8 @@ bot.on("message", async (msg) => {
       dcMsgId = await sendDiscordMessage(
         msg.text ? msg.text : msg.caption ? msg.caption : null,
         msg.from.username,
-        attachment
+        attachment,
+        pfpUrl
       );
     } else {
       const discordOldMessage = fileData[2];
@@ -100,14 +127,16 @@ bot.on("message", async (msg) => {
         msg.text ? msg.text : msg.caption ? msg.caption : null,
         msg.from.username,
         attachment,
-        discordOldMessage
+        discordOldMessage,
+        pfpUrl
       );
     }
   } else {
     dcMsgId = await sendDiscordMessage(
       msg.text ? msg.text : msg.caption ? msg.caption : null,
       msg.from.username,
-      attachment
+      attachment,
+      pfpUrl
     );
   }
   const dataString = `${Date.now()}=${tgMsgId}=${dcMsgId}`;
@@ -190,13 +219,19 @@ function purgeOldFromFile() {
 purgeOldFromFile();
 setInterval(purgeOldFromFile, 1 * 60 * 60 * 1000);
 
-async function sendDiscordMessage(content, username, attachment) {
+async function sendDiscordMessage(content, username, attachment, pfpUrl) {
   if (!attachment && content) {
-    const msg = await channel.send(`${content}\n\n~ ${username} on Telegram`);
+    const msg = await webhook.send({
+      username: username + " On Telegram",
+      avatarURL: pfpUrl,
+      content: content,
+    });
     return msg.id;
   } else {
-    const msg = await channel.send({
-      content: `${content || ""}\n\n~ ${username} on Telegram`,
+    const msg = await webhook.send({
+      username: username + " On Telegram",
+      avatarURL: pfpUrl,
+      content: `${content || "Attachment below!"}`,
       files: [
         {
           attachment: attachment,
@@ -211,11 +246,12 @@ async function sendDiscordReply(
   content,
   username,
   attachment,
-  originalMessage
+  originalMessage,
+  pfpUrl
 ) {
   const oldMessage = await channel.messages.fetch(originalMessage);
   if (!oldMessage) {
-    return sendDiscordMessage(content, username, attachment);
+    return sendDiscordMessage(content, username, attachment, pfpUrl);
   }
   if (!attachment && content) {
     const msg = await oldMessage.reply(
