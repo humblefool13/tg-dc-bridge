@@ -73,7 +73,6 @@ bot.on("polling_error", (err) => {
   ready.telegram = false;
   console.log("Error on line 57:");
   console.log(err);
-  initializeTelegramBot();
 });
 
 bot.on("message", async (msg) => {
@@ -360,19 +359,16 @@ process.on("unhandledRejection", (reason, p) => {
   console.log("Error on line 207:");
   console.log("[ ANTICRASH ] :: Unhandled Rejection / Catch");
   console.log(reason?.stack, p);
-  initializeTelegramBot();
 });
 process.on("uncaughtException", (err, origin) => {
   console.log("Error on line 212:");
   console.log("[ ANTICRASH ] :: Uncaught Exception / Catch");
   console.log(err?.stack, origin);
-  initializeTelegramBot();
 });
 process.on("uncaughtExceptionMonitor", (err, origin) => {
   console.log("Error on line 218:");
   console.log("[ ANTICRASH ] :: Uncaught Exception / Catch { MONITOR }");
   console.log(err?.stack, origin);
-  initializeTelegramBot();
 });
 
 client.login(process.env.dc_token);
