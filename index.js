@@ -79,7 +79,7 @@ bot.on("message", async (msg) => {
   ready.telegram = true;
   if (!ready.discord) return;
   if (msg.from.is_bot) return;
-  if (msg.text.startsWith("/")) return;
+  if (msg.text?.startsWith("/")) return;
   if (msg.chat.type === "private" && msg.text === "/start") {
     bot.sendMessage(
       msg.chat.id,
